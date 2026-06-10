@@ -30,6 +30,12 @@ def criar_processo(
         )
         return False
 
+    if processo.prioridade == 0 and processo.discos_necessarios > 0:
+        print(
+            f"[t={tempo}] ERRO: Processo #{processo.pid} tempo real não pode solicitar discos"
+        )
+        return False
+
     if not memoria.alocar(processo):
         mudar_estado(processo, "ESPERANDO_MEMORIA", tempo)
         esperando_memoria.append(processo)
@@ -40,8 +46,9 @@ def criar_processo(
         esperando_recurso.append(processo)
         return True
 
+    anterior = processo.estado
     escalonador.adicionar_processo(processo)
-    print(f"[t={tempo}] Processo #{processo.pid}: NOVO -> PRONTO")
+    print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> PRONTO")
     return True
 
 
@@ -53,10 +60,9 @@ def tentar_atender_fila_memoria(
         processo = esperando_memoria.popleft()
         if memoria.alocar(processo):
             if recursos.alocar_discos(processo):
+                anterior = processo.estado
                 escalonador.adicionar_processo(processo)
-                print(
-                    f"[t={tempo}] Processo #{processo.pid}: ESPERANDO_MEMORIA -> PRONTO"
-                )
+                print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> PRONTO")
             else:
                 mudar_estado(processo, "ESPERANDO_RECURSO", tempo)
                 esperando_recurso.append(processo)
@@ -71,8 +77,9 @@ def tentar_atender_fila_recursos(recursos, escalonador, esperando_recurso, tempo
     while esperando_recurso:
         processo = esperando_recurso.popleft()
         if recursos.alocar_discos(processo):
+            anterior = processo.estado
             escalonador.adicionar_processo(processo)
-            print(f"[t={tempo}] Processo #{processo.pid}: ESPERANDO_RECURSO -> PRONTO")
+            print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> PRONTO")
         else:
             processo.tempo_espera += 1
             proximos.append(processo)
@@ -117,6 +124,7 @@ def simular(arquivo_entrada):
     finalizados = []
 
     while True:
+        # 1. Chegada de novos processos no ciclo atual
         while fila_novos and fila_novos[0].tempo_chegada == tempo:
             processo = fila_novos.popleft()
             criar_processo(
@@ -129,15 +137,7 @@ def simular(arquivo_entrada):
                 esperando_recurso,
             )
 
-        esperando_memoria = tentar_atender_fila_memoria(
-            memoria, recursos, escalonador, esperando_memoria, esperando_recurso, tempo
-        )
-        esperando_recurso = tentar_atender_fila_recursos(
-            recursos, escalonador, esperando_recurso, tempo
-        )
-
-        processar_io_concluido(recursos, escalonador, tempo)
-
+        # 2. Escalonar e executar CPU
         escalonador.escalonar()
         eventos = escalonador.executar_ciclo()
 
@@ -156,6 +156,17 @@ def simular(arquivo_entrada):
                 )
             elif evento == "pronto":
                 print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> PRONTO")
+
+        # 3. Processar I/O
+        processar_io_concluido(recursos, escalonador, tempo)
+
+        # 4. Tentar atender filas de espera com recursos liberados no ciclo atual
+        esperando_memoria = tentar_atender_fila_memoria(
+            memoria, recursos, escalonador, esperando_memoria, esperando_recurso, tempo
+        )
+        esperando_recurso = tentar_atender_fila_recursos(
+            recursos, escalonador, esperando_recurso, tempo
+        )
 
         imprimir_estado(
             tempo, escalonador, memoria, recursos, esperando_memoria, esperando_recurso
@@ -181,5 +192,5 @@ def simular(arquivo_entrada):
 
 
 if __name__ == "__main__":
-    entrada = sys.argv[1] if len(sys.argv) > 1 else "entrada_teste.txt"
+    entrada = sys.argv[1] if len(sys.argv) > 1 else "entrada.txt"
     simular(entrada)
