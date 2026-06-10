@@ -78,10 +78,18 @@ class Escalonador:
                 self.cpus[i] = None
                 processo.quantum_usado = 0
 
-                if processo.fase == 1 and processo.io_restante > 0:
-                    processo.avancar_fase()
-                    eventos.append(("io", processo))
-                else:
+                if processo.fase == 1:
+                    if processo.io_restante > 0:
+                        processo.avancar_fase()
+                        eventos.append(("io", processo))
+                    elif processo.cpu2_restante > 0:
+                        processo.avancar_fase()
+                        self._reentrar_processo(processo)
+                        eventos.append(("pronto", processo))
+                    else:
+                        self.finalizar_processo(processo)
+                        eventos.append(("finalizado", processo))
+                elif processo.fase == 3:
                     self.finalizar_processo(processo)
                     eventos.append(("finalizado", processo))
 
@@ -101,6 +109,18 @@ class Escalonador:
 
         return eventos
 
+    def _reentrar_processo(self, processo):
+        processo.alterar_estado("PRONTO")
+
+        if processo.prioridade == 0:
+            self.fila_tempo_real.append(processo)
+        elif processo.fila_feedback == 1:
+            self.fila_usuario_1.append(processo)
+        elif processo.fila_feedback == 2:
+            self.fila_usuario_2.append(processo)
+        else:
+            self.fila_usuario_3.append(processo)
+
     def tem_pendente(self):
         return (
             any(processo is not None for processo in self.cpus)
@@ -117,7 +137,11 @@ class Escalonador:
             if processo is None:
                 print(f"CPU {i}: Livre")
             else:
-                tipo = "Tempo real" if processo.prioridade == 0 else f"Usuario Fila {processo.fila_feedback}"
+                tipo = (
+                    "Tempo real"
+                    if processo.prioridade == 0
+                    else f"Usuario Fila {processo.fila_feedback}"
+                )
                 print(f"CPU {i}: Processo #{processo.pid} - {tipo}")
 
         print("\n=== FILAS DE PRONTOS ===")

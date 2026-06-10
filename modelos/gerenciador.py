@@ -1,25 +1,17 @@
-import processo
-
 class GerenciadorMemoria:
 
     MEMORIA_TOTAL = 32768
 
     def __init__(self):
         self.blocos = [
-            {
-                "inicio": 0,
-                "tamanho": self.MEMORIA_TOTAL,
-                "livre": True,
-                "pid": None
-            }
+            {"inicio": 0, "tamanho": self.MEMORIA_TOTAL, "livre": True, "pid": None}
         ]
-
 
     def alocar(self, processo):
         """
-                Aloca memória usando sistema de blocos.
-                Retorna True se conseguiu alocar.
-                Retorna False se não houver espaço.
+        Aloca memória usando sistema de blocos.
+        Retorna True se conseguiu alocar.
+        Retorna False se não houver espaço.
         """
         memoria_necessaria = processo.ram
         for i, bloco in enumerate(self.blocos):
@@ -37,7 +29,7 @@ class GerenciadorMemoria:
                         "inicio": bloco["inicio"] + memoria_necessaria,
                         "tamanho": bloco["tamanho"] - memoria_necessaria,
                         "livre": True,
-                        "pid": None
+                        "pid": None,
                     }
 
                     bloco["tamanho"] = memoria_necessaria
@@ -49,7 +41,6 @@ class GerenciadorMemoria:
                 return True
 
         return False
-
 
     def liberar(self, pid):
         """
@@ -67,7 +58,6 @@ class GerenciadorMemoria:
                 return True
 
         return False
-
 
     def unir_blocos(self):
         """
@@ -88,7 +78,6 @@ class GerenciadorMemoria:
 
             else:
                 i += 1
-
 
     def mostrar_memoria(self):
         """

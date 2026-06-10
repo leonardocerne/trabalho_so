@@ -1,4 +1,4 @@
-import random
+﻿import random
 
 class Processo:
     ESTADOS = {
@@ -7,36 +7,34 @@ class Processo:
         "EXECUTANDO",
         "BLOQUEADO",
         "FINALIZADO",
+        "ESPERANDO_MEMORIA",
+        "ESPERANDO_RECURSO",
         "BLOQUEADO-SUSPENSO",
         "PRONTO-SUSPENSO"
     }
-    def __init__(self, pid, cpu1, io, cpu2, ram):
+
+    def __init__(self, pid, cpu1, io, cpu2, ram, chegada=0, prioridade=None, discos_necessarios=0):
         self.pid = pid
+        self.tempo_chegada = chegada
+        self.prioridade = prioridade if prioridade is not None else (
+            random.choice([0, 1]) if ram <= 512 else 1
+        )
         self.cpu1 = cpu1
         self.io = io
         self.cpu2 = cpu2
         self.ram = ram
+        self.discos_necessarios = discos_necessarios
         self.estado = "NOVO"
-        
+
         self.cpu1_restante = cpu1
-        self.io_restante = io           # PARA FACILITAR EXECUÇÃO
+        self.io_restante = io
         self.cpu2_restante = cpu2
 
-        if self.ram <= 512:
-            self.prioridade = random.choice([0, 1])     # Garantir randomicidade na prioridade
-        else:
-            self.prioridade = 1
-
-        self.fila_feedback = 0  # Saber em qual fila do feedback
-
-        self.fase = 1   # Saber em qual fase de cpu
-
-        self.quantum_usado = 0  # Para saber quanto do quantum foi usado, para o caso de precisar bloquear o processo
-
-        ###
-        #self.tempo_chegada
-        #self.discos_necessarios
-        ####
+        self.fila_feedback = 0
+        self.fase = 1
+        self.quantum_usado = 0
+        self.em_io = False
+        self.tempo_espera = 0
 
     def obter_fase(self):
         fases = {
@@ -45,19 +43,15 @@ class Processo:
             3: "CPU2",
             4: "FINALIZADO"
         }
-
         return fases[self.fase]
 
     def tempo_restante_fase(self):
         if self.fase == 1:
             return self.cpu1_restante
-
         if self.fase == 2:
             return self.io_restante
-
         if self.fase == 3:
             return self.cpu2_restante
-
         return 0
 
     def terminou(self):
@@ -71,10 +65,14 @@ class Processo:
     def avancar_fase(self):
         if self.fase == 1:
             self.fase = 2
-
         elif self.fase == 2:
             self.fase = 3
-
         elif self.fase == 3:
             self.fase = 4
             self.estado = "FINALIZADO"
+
+    def __repr__(self):
+        return (
+            f"<Processo #{self.pid} chegada={self.tempo_chegada} prioridade={self.prioridade} "
+            f"fase={self.obter_fase()} estado={self.estado}>"
+        )
