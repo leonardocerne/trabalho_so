@@ -46,7 +46,36 @@ class Escalonador:
         processo.fase = 4
         processo.alterar_estado("FINALIZADO")
 
+    def tem_processo_pronto(self):
+        return (
+            bool(self.fila_tempo_real)
+            or bool(self.fila_usuario_1)
+            or bool(self.fila_usuario_2)
+            or bool(self.fila_usuario_3)
+        )
+
+    def _recolocar_usuario_no_inicio(self, processo):
+        processo.alterar_estado("PRONTO")
+
+        if processo.fila_feedback == 1:
+            self.fila_usuario_1.appendleft(processo)
+        elif processo.fila_feedback == 2:
+            self.fila_usuario_2.appendleft(processo)
+        else:
+            processo.fila_feedback = 3
+            self.fila_usuario_3.appendleft(processo)
+
     def escalonar(self):
+        eventos = []
+
+        if self.fila_tempo_real and all(processo is not None for processo in self.cpus):
+            for i, processo in enumerate(self.cpus):
+                if processo.prioridade == 1:
+                    self.cpus[i] = None
+                    self._recolocar_usuario_no_inicio(processo)
+                    eventos.append(("preemptado", processo))
+                    break
+
         for i in range(len(self.cpus)):
             if self.cpus[i] is not None:
                 continue
@@ -58,6 +87,8 @@ class Escalonador:
 
             processo.alterar_estado("EXECUTANDO")
             self.cpus[i] = processo
+
+        return eventos
 
     def executar_ciclo(self):
         eventos = []
@@ -83,7 +114,7 @@ class Escalonador:
                         processo.avancar_fase()
                         eventos.append(("io", processo))
                     elif processo.cpu2_restante > 0:
-                        processo.avancar_fase()
+                        processo.fase = 3
                         self._reentrar_processo(processo)
                         eventos.append(("pronto", processo))
                     else:
@@ -94,6 +125,10 @@ class Escalonador:
                     eventos.append(("finalizado", processo))
 
             elif processo.prioridade == 1 and processo.quantum_usado == self.QUANTUM:
+                if not self.tem_processo_pronto():
+                    processo.quantum_usado = 0
+                    continue
+
                 self.cpus[i] = None
                 processo.quantum_usado = 0
                 processo.alterar_estado("PRONTO")

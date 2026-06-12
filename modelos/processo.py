@@ -16,9 +16,12 @@ class Processo:
     def __init__(self, pid, cpu1, io, cpu2, ram, chegada=0, prioridade=None, discos_necessarios=0):
         self.pid = pid
         self.tempo_chegada = chegada
-        self.prioridade = prioridade if prioridade is not None else (
-            random.choice([0, 1]) if ram <= 512 else 1
-        )
+        if prioridade is not None:
+            self.prioridade = prioridade
+        elif ram <= 512 and io == 0 and cpu2 == 0:
+            self.prioridade = random.choice([0, 1])
+        else:
+            self.prioridade = 1
         self.cpu1 = cpu1
         self.io = io
         self.cpu2 = cpu2

@@ -1,6 +1,6 @@
 import sys
 from collections import deque
-
+import time
 from le_dados import carregar_processos
 from modelos.escalonador import Escalonador
 from modelos.gerenciador import GerenciadorMemoria
@@ -13,37 +13,20 @@ def mudar_estado(processo, novo_estado, tempo):
     print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> {novo_estado}")
 
 
-def criar_processo(
-    processo,
-    tempo,
-    memoria,
-    recursos,
-    escalonador,
-    esperando_memoria,
-    esperando_recurso,
-):
+def criar_processo(processo, tempo, memoria, escalonador, esperando_memoria):
     print(f"[t={tempo}] Criando Processo #{processo.pid}")
 
     if processo.prioridade == 0 and processo.ram > 512:
-        print(
-            f"[t={tempo}] ERRO: Processo #{processo.pid} tempo real solicitou {processo.ram} MiB"
-        )
+        print(f"[t={tempo}] ERRO: Processo #{processo.pid} tempo real solicitou {processo.ram} MiB")
         return False
 
-    if processo.prioridade == 0 and processo.discos_necessarios > 0:
-        print(
-            f"[t={tempo}] ERRO: Processo #{processo.pid} tempo real não pode solicitar discos"
-        )
+    if processo.prioridade == 0 and (processo.io > 0 or processo.cpu2 > 0):
+        print(f"[t={tempo}] ERRO: Processo #{processo.pid} tempo real nao pode usar I/O")
         return False
 
     if not memoria.alocar(processo):
         mudar_estado(processo, "ESPERANDO_MEMORIA", tempo)
         esperando_memoria.append(processo)
-        return True
-
-    if not recursos.alocar_discos(processo):
-        mudar_estado(processo, "ESPERANDO_RECURSO", tempo)
-        esperando_recurso.append(processo)
         return True
 
     anterior = processo.estado
@@ -52,59 +35,49 @@ def criar_processo(
     return True
 
 
-def tentar_atender_fila_memoria(
-    memoria, recursos, escalonador, esperando_memoria, esperando_recurso, tempo
-):
+def tentar_atender_fila_memoria(memoria, escalonador, esperando_memoria, tempo):
     proximos = deque()
+
     while esperando_memoria:
         processo = esperando_memoria.popleft()
+
         if memoria.alocar(processo):
-            if recursos.alocar_discos(processo):
-                anterior = processo.estado
-                escalonador.adicionar_processo(processo)
-                print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> PRONTO")
-            else:
-                mudar_estado(processo, "ESPERANDO_RECURSO", tempo)
-                esperando_recurso.append(processo)
-        else:
-            processo.tempo_espera += 1
-            proximos.append(processo)
-    return proximos
-
-
-def tentar_atender_fila_recursos(recursos, escalonador, esperando_recurso, tempo):
-    proximos = deque()
-    while esperando_recurso:
-        processo = esperando_recurso.popleft()
-        if recursos.alocar_discos(processo):
             anterior = processo.estado
             escalonador.adicionar_processo(processo)
             print(f"[t={tempo}] Processo #{processo.pid}: {anterior} -> PRONTO")
         else:
             processo.tempo_espera += 1
             proximos.append(processo)
+
     return proximos
 
 
 def processar_io_concluido(recursos, escalonador, tempo):
     finalizados_io = recursos.executar_ciclo()
+
     for processo in finalizados_io:
         escalonador.voltar_do_io(processo)
-        print(
-            f"[t={tempo}] Processo #{processo.pid}: BLOQUEADO -> PRONTO (retorno de I/O)"
-        )
+        print(f"[t={tempo}] Processo #{processo.pid}: BLOQUEADO -> PRONTO (retorno de I/O)")
 
 
-def imprimir_estado(
-    tempo, escalonador, memoria, recursos, esperando_memoria, esperando_recurso
-):
+def escalonar_processos_prontos(escalonador, tempo):
+    eventos_escalonamento = escalonador.escalonar()
+
+    for evento, processo in eventos_escalonamento:
+        if evento == "preemptado":
+            print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> PRONTO (preemptado por tempo real)")
+
+
+def imprimir_estado(tempo, escalonador, memoria, recursos, esperando_memoria):
     print("\n" + "=" * 50)
     print(f"Tempo: {tempo}\n")
+
     escalonador.mostrar_escalonador()
+
     print("=== FILAS DE ESPERA ===")
     print(f"Esperando memoria: {[processo.pid for processo in esperando_memoria]}")
-    print(f"Esperando recurso: {[processo.pid for processo in esperando_recurso]}")
-    print(f"Bloqueados I/O: {[processo.pid for processo in recursos.fila_io]}")
+    print(f"Bloqueados I/O: {recursos.ids_bloqueados()}")
+
     memoria.mostrar_memoria()
     recursos.mostrar_recursos()
     print("=" * 50)
@@ -113,32 +86,23 @@ def imprimir_estado(
 def simular(arquivo_entrada):
     fila_novos = carregar_processos(arquivo_entrada)
     fila_novos = deque(sorted(fila_novos, key=lambda p: (p.tempo_chegada, p.pid)))
+
     memoria = GerenciadorMemoria()
     recursos = GerenciadorRecursos()
     escalonador = Escalonador()
 
     esperando_memoria = deque()
-    esperando_recurso = deque()
-
     tempo = 0
     finalizados = []
 
     while True:
-        # 1. Chegada de novos processos no ciclo atual
+        time.sleep(1)
         while fila_novos and fila_novos[0].tempo_chegada == tempo:
             processo = fila_novos.popleft()
-            criar_processo(
-                processo,
-                tempo,
-                memoria,
-                recursos,
-                escalonador,
-                esperando_memoria,
-                esperando_recurso,
-            )
+            criar_processo(processo, tempo, memoria, escalonador, esperando_memoria)
 
-        # 2. Escalonar e executar CPU
-        escalonador.escalonar()
+        escalonar_processos_prontos(escalonador, tempo)
+
         eventos = escalonador.executar_ciclo()
 
         for evento, processo in eventos:
@@ -147,35 +111,26 @@ def simular(arquivo_entrada):
                 print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> BLOQUEADO")
             elif evento == "finalizado":
                 memoria.liberar(processo.pid)
-                recursos.liberar_discos(processo.pid)
                 finalizados.append(processo)
                 print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> FINALIZADO")
             elif evento == "quantum":
-                print(
-                    f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> PRONTO (quantum esgotado)"
-                )
+                print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> PRONTO (quantum esgotado)")
             elif evento == "pronto":
                 print(f"[t={tempo}] Processo #{processo.pid}: EXECUTANDO -> PRONTO")
 
-        # 3. Processar I/O
         processar_io_concluido(recursos, escalonador, tempo)
 
-        # 4. Tentar atender filas de espera com recursos liberados no ciclo atual
         esperando_memoria = tentar_atender_fila_memoria(
-            memoria, recursos, escalonador, esperando_memoria, esperando_recurso, tempo
-        )
-        esperando_recurso = tentar_atender_fila_recursos(
-            recursos, escalonador, esperando_recurso, tempo
+            memoria, escalonador, esperando_memoria, tempo
         )
 
-        imprimir_estado(
-            tempo, escalonador, memoria, recursos, esperando_memoria, esperando_recurso
-        )
+        escalonar_processos_prontos(escalonador, tempo)
+
+        imprimir_estado(tempo, escalonador, memoria, recursos, esperando_memoria)
 
         if (
             not fila_novos
             and not esperando_memoria
-            and not esperando_recurso
             and not escalonador.tem_pendente()
             and not recursos.tem_pendente()
         ):
@@ -183,12 +138,10 @@ def simular(arquivo_entrada):
 
         tempo += 1
 
-    print(f"\nSimulação finalizada em {tempo} ciclos")
+    print(f"\nSimulacao finalizada em {tempo} ciclos")
     print(f"Processos finalizados: {len(finalizados)}")
-    print(
-        f"Processos de tempo real: {sum(1 for p in finalizados if p.prioridade == 0)}"
-    )
-    print(f"Processos de usuário: {sum(1 for p in finalizados if p.prioridade == 1)}")
+    print(f"Processos de tempo real: {sum(1 for p in finalizados if p.prioridade == 0)}")
+    print(f"Processos de usuario: {sum(1 for p in finalizados if p.prioridade == 1)}")
 
 
 if __name__ == "__main__":
